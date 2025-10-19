@@ -43,6 +43,11 @@ const CollaborativeWhiteboard = () => {
   // Starting position for shape tools (line, rectangle, circle)
   const [startPos, setStartPos] = useState(null);
 
+  const [showGallery, setShowGallery] = useState(false);
+  const [savedDrawings, setSavedDrawings] = useState([]);
+  const [saveTitle, setSaveTitle] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
   // Available color palette
   const colors = [
     '#000000', '#ef4444', '#f97316', '#f59e0b', '#eab308',
@@ -390,6 +395,145 @@ const CollaborativeWhiteboard = () => {
     }
   };
 
+  /**
+ * Save current drawing to MongoDB
+ */
+const saveDrawing = async () => {
+  if (!saveTitle.trim()) {
+    alert('Please enter a title for your drawing');
+    return;
+  }
+
+  console.log('Starting save process...'); // DEBUG
+
+  try {
+    const canvas = canvasRef.current;
+    const thumbnail = canvas.toDataURL('image/png');
+
+    console.log('Getting room data for room:', roomId); // DEBUG
+    
+    // Get current room's drawing data from server
+    const roomDataResponse = await fetch(`http://localhost:3001/api/room/${roomId}/data`);
+    
+    if (!roomDataResponse.ok) {
+      throw new Error('Failed to get room data');
+    }
+    
+    const roomData = await roomDataResponse.json();
+    
+    console.log('Room data received, length:', roomData.drawingData?.length); // DEBUG
+
+    const savePayload = {
+      roomId: `saved-${Date.now()}`,
+      title: saveTitle,
+      drawingData: roomData.drawingData,
+      createdBy: username,
+      thumbnail
+    };
+    
+    console.log('Sending save request...'); // DEBUG
+
+    const response = await fetch('http://localhost:3001/api/drawings/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(savePayload)
+    });
+
+    const data = await response.json();
+    
+    console.log('Save response:', data); // DEBUG
+    
+    if (data.success) {
+      alert('Drawing saved successfully!');
+      setSaveTitle('');
+      setShowSaveModal(false);
+    } else {
+      alert('Save failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error saving drawing:', error);
+    alert('Failed to save drawing: ' + error.message);
+  }
+};
+
+/**
+ * Load saved drawings from MongoDB
+ */
+const loadDrawings = async () => {
+  try {
+    const response = await fetch('http://localhost:3001/api/drawings');
+    const drawings = await response.json();
+    setSavedDrawings(drawings);
+    setShowGallery(true);
+  } catch (error) {
+    console.error('Error loading drawings:', error);
+    alert('Failed to load drawings');
+  }
+};
+
+/**
+ * Load a specific drawing onto the canvas
+ */
+const loadDrawing = async (drawingId) => {
+  try {
+
+    console.log('Loading drawing ID:', drawingId); // DEBUG
+
+    const response = await fetch(`http://localhost:3001/api/drawings/${drawingId}`);
+    const drawing = await response.json();
+
+    console.log('Loaded drawing:', drawing); // DEBUG
+    console.log('Drawing data length:', drawing.drawingData?.length); // DEBUG
+
+    // Clear current canvas
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Redraw loaded drawing
+    drawing.drawingData.forEach(data => {
+      drawOnCanvas(context, data);
+    });
+    
+    setShowGallery(false);
+    alert('Drawing loaded!');
+  } catch (error) {
+    console.error('Error loading drawing:', error);
+    alert('Failed to load drawing');
+  }
+};
+
+/**
+ * Delete a saved drawing
+ */
+const deleteDrawing = async (drawingId, e) => {
+  e.stopPropagation(); // Prevent loading the drawing when clicking delete
+  
+  console.log('Deleting drawing:', drawingId); // DEBUG
+  
+  if (!window.confirm('Are you sure you want to delete this drawing?')) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`http://localhost:3001/api/drawings/${drawingId}`, {
+      method: 'DELETE'
+    });
+
+    console.log('Delete response:', response); // DEBUG
+
+    if (response.ok) {
+      // Refresh the gallery
+      const updatedDrawings = savedDrawings.filter(d => d._id !== drawingId);
+      setSavedDrawings(updatedDrawings);
+      alert('Drawing deleted!');
+    }
+  } catch (error) {
+    console.error('Error deleting drawing:', error);
+    alert('Failed to delete drawing');
+  }
+};
+
   // Render join screen if not yet joined
   if (!joined) {
     return (
@@ -518,6 +662,21 @@ const CollaborativeWhiteboard = () => {
             <Undo className="w-4 h-4" />
             Undo
           </button>
+
+          <button
+            onClick={() => setShowSaveModal(true)}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Save Drawing
+          </button>
+          <button
+            onClick={loadDrawings}
+            className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
+          >
+            📂 Load Drawing
+          </button>
+
           <button
             onClick={clearCanvas}
             className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
@@ -618,6 +777,90 @@ const CollaborativeWhiteboard = () => {
           );
         })}
       </div>
+        
+         {/* Save Drawing Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">Save Drawing</h2>
+            <input
+              type="text"
+              value={saveTitle}
+              onChange={(e) => setSaveTitle(e.target.value)}
+              placeholder="Enter drawing title..."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg mb-4 text-gray-800"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 py-2 rounded-lg font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveDrawing}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gallery Modal */}
+      {showGallery && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Saved Drawings</h2>
+              <button
+                onClick={() => setShowGallery(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            {savedDrawings.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No saved drawings yet</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+                 {savedDrawings.map((drawing) => (
+                  <div
+                    key={drawing._id}
+                    className="border-2 border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-500 transition-colors relative"
+                  >
+                    <div onClick={() => loadDrawing(drawing._id)}>
+                      <img
+                        src={drawing.thumbnail}
+                        alt={drawing.title}
+                        className="w-full h-48 object-cover rounded mb-3"
+                      />
+                      <h3 className="font-semibold text-gray-800">{drawing.title}</h3>
+                      <p className="text-sm text-gray-500">By {drawing.createdBy}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(drawing.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    
+                    {/* Delete Button */}
+                    <button
+                      onClick={(e) => deleteDrawing(drawing._id, e)}
+                      className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-2 rounded-full transition-colors"
+                      title="Delete drawing"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

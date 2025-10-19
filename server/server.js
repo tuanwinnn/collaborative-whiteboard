@@ -16,6 +16,9 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const mongoose = require('mongoose'); 
+require('dotenv').config(); 
+
 
 const app = express();
 const server = http.createServer(app);
@@ -29,7 +32,8 @@ const io = socketIo(server, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increase payload limit for large drawings
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 /**
  * In-memory storage for room data
@@ -41,6 +45,23 @@ const rooms = new Map();
 
 // Store user information per room (legacy, might remove)
 const roomUsers = new Map();
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
+
+// Drawing Schema
+const drawingSchema = new mongoose.Schema({
+  roomId: { type: String, required: true },
+  title: { type: String, required: true },
+  drawingData: { type: Array, required: true },
+  createdBy: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  thumbnail: String
+});
+
+const Drawing = mongoose.model('Drawing', drawingSchema);
 
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
@@ -186,6 +207,80 @@ app.get('/room/:roomId', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
+// Save drawing endpoint
+app.post('/api/drawings/save', async (req, res) => {
+  try {
+    console.log('Received save request'); // DEBUG
+    
+    const { roomId, title, drawingData, createdBy, thumbnail } = req.body;
+    
+    console.log('Data size:', JSON.stringify(req.body).length); // DEBUG
+    
+    const drawing = new Drawing({
+      roomId,
+      title,
+      drawingData,
+      createdBy,
+      thumbnail
+    });
+    
+    console.log('Saving to database...'); // DEBUG
+    
+    await drawing.save();
+    
+    console.log('Save successful!'); // DEBUG
+    
+    res.json({ success: true, id: drawing._id });
+  } catch (error) {
+    console.error('Error saving drawing:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all drawings
+app.get('/api/drawings', async (req, res) => {
+  try {
+    const drawings = await Drawing.find().sort({ createdAt: -1 });
+    res.json(drawings);
+  } catch (error) {
+    console.error('Error fetching drawings:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single drawing
+app.get('/api/drawings/:id', async (req, res) => {
+  try {
+    const drawing = await Drawing.findById(req.params.id);
+    res.json(drawing);
+  } catch (error) {
+    console.error('Error fetching drawing:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get current room drawing data
+app.get('/api/room/:roomId/data', (req, res) => {
+  const { roomId } = req.params;
+  if (rooms.has(roomId)) {
+    const room = rooms.get(roomId);
+    res.json({ drawingData: room.drawingData });
+  } else {
+    res.json({ drawingData: [] });
+  }
+});
+
+// Delete drawing endpoint
+app.delete('/api/drawings/:id', async (req, res) => {
+  try {
+    await Drawing.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting drawing:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 server.listen(PORT, () => {
   console.log(`🎨 Whiteboard server running on port ${PORT}`);
