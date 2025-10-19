@@ -50,28 +50,40 @@ const CollaborativeWhiteboard = () => {
     '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7'
   ];
 
+  /**
+   * Initialize canvas and handle window resize
+   * Sets up canvas dimensions and context settings
+   */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const context = canvas.getContext('2d');
+    // Smooth line rendering
     context.lineCap = 'round';
     context.lineJoin = 'round';
 
-    // Set canvas size
-    canvas.width = window.innerWidth - 300;
+    // Set initial canvas size based on window dimensions
+    canvas.width = window.innerWidth - 300; // Account for sidebar
     canvas.height = window.innerHeight - 100;
 
-    // Handle window resize
+    /**
+     * Handle window resize while preserving drawing
+     * Creates temporary canvas to store current drawing, then redraws
+     */
     const handleResize = () => {
+      // Save current drawing to temporary canvas
       const tempCanvas = document.createElement('canvas');
       const tempContext = tempCanvas.getContext('2d');
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
       tempContext.drawImage(canvas, 0, 0);
 
+      // Resize main canvas
       canvas.width = window.innerWidth - 300;
       canvas.height = window.innerHeight - 100;
+      
+      // Restore drawing from temporary canvas
       context.drawImage(tempCanvas, 0, 0);
     };
 
@@ -79,33 +91,56 @@ const CollaborativeWhiteboard = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [joined]);
 
+  /**
+   * WebSocket connection and event listeners
+   * Handles real-time communication between users
+   */
   useEffect(() => {
     if (!joined) return;
 
+    // Establish WebSocket connection
     socketRef.current = io(SOCKET_URL);
 
+    // Join the specified room with username
     socketRef.current.emit('join-room', { roomId, username });
 
+    /**
+     * Load existing drawing data when joining room
+     * Server sends all previous drawing actions to sync new user
+     */
     socketRef.current.on('load-drawing', (drawingData) => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Replay all drawing actions
       drawingData.forEach(data => {
         drawOnCanvas(context, data);
       });
     });
 
+    /**
+     * Receive drawing data from other users
+     * Renders their strokes on local canvas
+     */
     socketRef.current.on('draw', (data) => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       drawOnCanvas(context, data);
     });
 
+    /**
+     * Handle user join events
+     * Updates user list when someone joins the room
+     */
     socketRef.current.on('user-joined', ({ user, users: updatedUsers }) => {
       setUsers(updatedUsers);
     });
 
+    /**
+     * Handle user leave events
+     * Updates user list and removes their cursor
+     */
     socketRef.current.on('user-left', ({ userId, username: leftUsername, users: updatedUsers }) => {
       setUsers(updatedUsers);
       setRemoteCursors(prev => {
@@ -115,6 +150,10 @@ const CollaborativeWhiteboard = () => {
       });
     });
 
+    /**
+     * Track cursor movements of other users
+     * Displays their cursor position in real-time
+     */
     socketRef.current.on('cursor-move', ({ userId, x, y }) => {
       setRemoteCursors(prev => ({
         ...prev,
@@ -122,12 +161,20 @@ const CollaborativeWhiteboard = () => {
       }));
     });
 
+    /**
+     * Clear canvas event from server
+     * Triggered when any user clears the canvas
+     */
     socketRef.current.on('clear-canvas', () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
     });
 
+    /**
+     * Redraw entire canvas from server state
+     * Used for undo operations
+     */
     socketRef.current.on('redraw', (drawingData) => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
@@ -138,6 +185,7 @@ const CollaborativeWhiteboard = () => {
       });
     });
 
+    // Cleanup: disconnect socket when component unmounts or user leaves
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -145,34 +193,52 @@ const CollaborativeWhiteboard = () => {
     };
   }, [joined, roomId, username]);
 
+  /**
+   * Render drawing data on canvas
+   * Handles all drawing types: pen, eraser, line, rectangle, circle
+   * 
+   * @param {CanvasRenderingContext2D} context - Canvas 2D context
+   * @param {Object} data - Drawing data from socket event
+   */
   const drawOnCanvas = (context, data) => {
     const { type, x0, y0, x1, y1, color: drawColor, brushSize: size } = data;
 
     context.strokeStyle = drawColor;
     context.lineWidth = size;
 
+    // Handle pen and eraser tools
     if (type === 'pen' || type === 'eraser') {
       if (type === 'eraser') {
+        // Eraser removes pixels instead of adding them
         context.globalCompositeOperation = 'destination-out';
       } else {
+        // Normal drawing mode
         context.globalCompositeOperation = 'source-over';
       }
 
+      // Draw line from previous point to current point
       context.beginPath();
       context.moveTo(x0, y0);
       context.lineTo(x1, y1);
       context.stroke();
-    } else if (type === 'line') {
+    } 
+    // Handle straight line tool
+    else if (type === 'line') {
       context.globalCompositeOperation = 'source-over';
       context.beginPath();
       context.moveTo(x0, y0);
       context.lineTo(x1, y1);
       context.stroke();
-    } else if (type === 'rectangle') {
+    } 
+    // Handle rectangle tool
+    else if (type === 'rectangle') {
       context.globalCompositeOperation = 'source-over';
       context.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    } else if (type === 'circle') {
+    } 
+    // Handle circle tool
+    else if (type === 'circle') {
       context.globalCompositeOperation = 'source-over';
+      // Calculate radius from start point to end point
       const radius = Math.sqrt(Math.pow(x1 - x0, 2) + Math.pow(y1 - y0, 2));
       context.beginPath();
       context.arc(x0, y0, radius, 0, 2 * Math.PI);
@@ -180,42 +246,42 @@ const CollaborativeWhiteboard = () => {
     }
   };
 
+  /**
+   * Handle mouse down event - start drawing
+   * Records starting position for all tools
+   */
   const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    // Convert mouse coordinates to canvas coordinates
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setIsDrawing(true);
+    setStartPos({ x, y });
+  };
+
+  /**
+   * Handle mouse move event - continue drawing
+   * For pen/eraser: draws continuously
+   * For shapes: just tracks cursor position
+   */
+  const draw = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    if (tool === 'pen' || tool === 'eraser') {
-      setIsDrawing(true);
-      setStartPos({ x, y });
-    } else {
-      setStartPos({ x, y });
-      setIsDrawing(true);
-    }
-  };
-
-  const draw = (e) => {
-    if (!isDrawing && tool !== 'pen' && tool !== 'eraser') {
-      const canvas = canvasRef.current;
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      if (socketRef.current) {
-        socketRef.current.emit('cursor-move', { roomId, x, y });
-      }
-      return;
+    // Always emit cursor position for other users to see
+    if (socketRef.current && !isDrawing) {
+      socketRef.current.emit('cursor-move', { roomId, x, y });
     }
 
     if (!isDrawing) return;
 
-    const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
 
+    // Pen and eraser draw continuously (every mouse move)
     if (tool === 'pen' || tool === 'eraser') {
       const drawData = {
         roomId,
@@ -228,19 +294,27 @@ const CollaborativeWhiteboard = () => {
         brushSize
       };
 
+      // Draw locally for immediate feedback
       drawOnCanvas(context, drawData);
 
+      // Send to server to broadcast to other users
       if (socketRef.current) {
         socketRef.current.emit('draw', drawData);
       }
 
+      // Update start position for next segment
       setStartPos({ x, y });
     }
   };
 
+  /**
+   * Handle mouse up event - finish drawing
+   * For shapes: draws the final shape from start to end point
+   */
   const stopDrawing = (e) => {
     if (!isDrawing) return;
 
+    // For shape tools, draw the final shape on mouse up
     if (tool !== 'pen' && tool !== 'eraser') {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
@@ -270,6 +344,10 @@ const CollaborativeWhiteboard = () => {
     setStartPos(null);
   };
 
+  /**
+   * Clear the entire canvas for all users
+   * Emits event to server which broadcasts to all clients
+   */
   const clearCanvas = () => {
     if (socketRef.current) {
       socketRef.current.emit('clear-canvas', roomId);
@@ -279,12 +357,20 @@ const CollaborativeWhiteboard = () => {
     context.clearRect(0, 0, canvas.width, canvas.height);
   };
 
+  /**
+   * Undo last drawing action
+   * Server removes last stroke and broadcasts redraw event
+   */
   const undo = () => {
     if (socketRef.current) {
       socketRef.current.emit('undo', roomId);
     }
   };
 
+  /**
+   * Export canvas as PNG image
+   * Downloads to user's device with timestamp
+   */
   const downloadCanvas = () => {
     const canvas = canvasRef.current;
     const url = canvas.toDataURL('image/png');
@@ -294,12 +380,17 @@ const CollaborativeWhiteboard = () => {
     link.click();
   };
 
+  /**
+   * Join a room with username
+   * Validates inputs before connecting
+   */
   const joinRoom = () => {
     if (roomId.trim() && username.trim()) {
       setJoined(true);
     }
   };
 
+  // Render join screen if not yet joined
   if (!joined) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
@@ -478,17 +569,54 @@ const CollaborativeWhiteboard = () => {
         />
         
         {/* Remote Cursors */}
-        {Object.entries(remoteCursors).map(([userId, pos]) => (
-          <div
-            key={userId}
-            className="absolute w-4 h-4 bg-red-500 rounded-full pointer-events-none"
-            style={{
-              left: pos.x,
-              top: pos.y,
-              transform: 'translate(-50%, -50%)'
-            }}
-          />
-        ))}
+        {Object.entries(remoteCursors).map(([userId, pos]) => {
+          // Find the user info to get their color and username
+          const user = users.find(u => u.id === userId);
+          const userColor = user?.color || '#ef4444';
+          const userName = user?.username || 'User';
+          
+          console.log('Rendering cursor for:', userName, 'at', pos); // DEBUG
+          
+          return (
+            <div
+              key={userId}
+              className="absolute pointer-events-none z-50"
+              style={{
+                left: pos.x,
+                top: pos.y,
+                transform: 'translate(-2px, -2px)'
+              }}
+            >
+              {/* Cursor Icon */}
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
+              >
+                <path
+                  d="M5 3L19 12L12 13L9 19L5 3Z"
+                  fill={userColor}
+                  stroke="white"
+                  strokeWidth="1.5"
+                />
+              </svg>
+              
+              {/* Username Label */}
+              <div
+                className="absolute top-6 left-2 px-2 py-1 rounded text-xs font-medium whitespace-nowrap"
+                style={{
+                  backgroundColor: userColor,
+                  color: 'white',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }}
+              >
+                {userName}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
