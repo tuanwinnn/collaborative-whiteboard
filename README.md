@@ -312,23 +312,23 @@ This project demonstrates:
 
 Drawing Enhancements:
 
-Text tool for adding labels and annotations
-Fill tool for coloring shapes
-Layers support for complex compositions
-Redo functionality to complement undo
+**Text tool for adding labels and annotations**
+**Fill tool for coloring shapes**
+**Layers support for complex compositions**
+**Redo functionality to complement undo**
 
 Collaboration Features:
 
-User authentication & persistent profiles
-Private rooms with password protection
-In-app chat alongside drawing
-Drawing permissions (view-only, edit, admin)
+**User authentication & persistent profiles**
+**Private rooms with password protection**
+**In-app chat alongside drawing**
+**Drawing permissions (view-only, edit, admin)**
 
 Export & Sharing:
 
-Export as SVG for scalability
-Share drawings via public links
-Drawing templates library
+**Export as SVG for scalability**
+**Share drawings via public links**
+**Drawing templates library**
 
 
 ## 🤝 Contributing
