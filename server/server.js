@@ -19,9 +19,17 @@ const cors = require('cors');
 const mongoose = require('mongoose'); 
 require('dotenv').config(); 
 
-
 const app = express();
 const server = http.createServer(app);
+
+// Configure CORS for Express
+app.use(cors({
+  origin: 'https://collaborative-whiteboard-front-end.onrender.com',
+  credentials: true
+}));
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Configure Socket.io with CORS for cross-origin requests
 const io = socketIo(server, {
