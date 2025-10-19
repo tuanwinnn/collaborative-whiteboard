@@ -14,6 +14,15 @@ A real-time collaborative drawing application where multiple users can draw toge
 
 *Note: Render free tier may take 30-60 seconds to wake up on first visit*
 
+## 🎥 Real-Time Collaboration Demo
+
+![Real-time Drawing Sync](./screenshots/whiteboard-collaboration-demo.gif)
+
+*Draw on one screen and watch it appear instantly on another - powered by WebSocket technology. Multiple users can collaborate simultaneously with live cursor tracking and synchronized drawing state.*
+
+---
+
+
 ## ✨ Features
 
 ### 🖌️ Drawing Tools
