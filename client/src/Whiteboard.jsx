@@ -16,7 +16,7 @@ import { Pencil, Eraser, Circle, Square, Minus, Download, Trash2, Undo, Users } 
 import io from 'socket.io-client';
 
 // WebSocket server URL - change this when deploying to production
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = 'https://collaborative-whiteboard-qg0f.onrender.com/';
 
 const CollaborativeWhiteboard = () => {
   // Canvas reference for direct DOM manipulation
