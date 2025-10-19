@@ -16,7 +16,7 @@ import { Pencil, Eraser, Circle, Square, Minus, Download, Trash2, Undo, Users } 
 import io from 'socket.io-client';
 
 // WebSocket server URL - change this when deploying to production
-const SOCKET_URL = 'https://collaborative-whiteboard-qg0f.onrender.com/';
+const SOCKET_URL = 'https://collaborative-whiteboard-qg0f.onrender.com';
 
 const CollaborativeWhiteboard = () => {
   // Canvas reference for direct DOM manipulation
@@ -413,7 +413,7 @@ const saveDrawing = async () => {
     console.log('Getting room data for room:', roomId); // DEBUG
     
     // Get current room's drawing data from server
-    const roomDataResponse = await fetch(`http://localhost:3001/api/room/${roomId}/data`);
+    const roomDataResponse = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/room/${roomId}/data`);
     
     if (!roomDataResponse.ok) {
       throw new Error('Failed to get room data');
@@ -433,7 +433,7 @@ const saveDrawing = async () => {
     
     console.log('Sending save request...'); // DEBUG
 
-    const response = await fetch('http://localhost:3001/api/drawings/save', {
+    const response = await fetch('https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(savePayload)
@@ -461,7 +461,7 @@ const saveDrawing = async () => {
  */
 const loadDrawings = async () => {
   try {
-    const response = await fetch('http://localhost:3001/api/drawings');
+    const response = await fetch('https://collaborative-whiteboard-qg0f.onrender.com/api/drawings');
     const drawings = await response.json();
     setSavedDrawings(drawings);
     setShowGallery(true);
@@ -479,7 +479,7 @@ const loadDrawing = async (drawingId) => {
 
     console.log('Loading drawing ID:', drawingId); // DEBUG
 
-    const response = await fetch(`http://localhost:3001/api/drawings/${drawingId}`);
+    const response = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/${drawingId}`);
     const drawing = await response.json();
 
     console.log('Loaded drawing:', drawing); // DEBUG
@@ -516,7 +516,7 @@ const deleteDrawing = async (drawingId, e) => {
   }
 
   try {
-    const response = await fetch(`http://localhost:3001/api/drawings/${drawingId}`, {
+    const response = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/${drawingId}`, {
       method: 'DELETE'
     });
 
