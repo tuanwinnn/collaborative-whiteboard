@@ -308,27 +308,24 @@ This project demonstrates:
 
 ## 💡 Potential Extensions
 
-*This project is feature-complete and fully functional. Below are additional features that could be added to expand its capabilities:*
+*This project is feature-complete and fully functional. Below are additional features that could expand its capabilities:*
 
-Drawing Enhancements:
+**Drawing Enhancements:**
+- Text tool for adding labels and annotations
+- Fill tool for coloring shapes
+- Layers support for complex compositions
+- Redo functionality to complement undo
 
-**Text tool for adding labels and annotations**
-**Fill tool for coloring shapes**
-**Layers support for complex compositions**
-**Redo functionality to complement undo**
+**Collaboration Features:**
+- User authentication & persistent profiles
+- Private rooms with password protection
+- In-app chat alongside drawing
+- Drawing permissions (view-only, edit, admin)
 
-Collaboration Features:
-
-**User authentication & persistent profiles**
-**Private rooms with password protection**
-**In-app chat alongside drawing**
-**Drawing permissions (view-only, edit, admin)**
-
-Export & Sharing:
-
-**Export as SVG for scalability**
-**Share drawings via public links**
-**Drawing templates library**
+**Export & Sharing:**
+- Export as SVG for scalability
+- Share drawings via public links
+- Drawing templates library
 
 
 ## 🤝 Contributing
