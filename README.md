@@ -1,4 +1,4 @@
-# 🎨 Real-Time Collaborative Whiteboard
+#  Real-Time Collaborative Whiteboard
 
 A real-time collaborative drawing application where multiple users can draw together on the same canvas simultaneously using WebSockets.
 
@@ -8,13 +8,13 @@ A real-time collaborative drawing application where multiple users can draw toge
 ![Socket.io](https://img.shields.io/badge/Socket.io-4.6-black)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
 
-## 🌐 Live Demo
+##  Live Demo
 
-**[🎨 Try it Live →](https://collaborative-whiteboard-front-end.onrender.com)**
+**[ Try it Live →](https://collaborative-whiteboard-front-end.onrender.com)**
 
 *Note: Render free tier may take 30-60 seconds to wake up on first visit*
 
-## 🎥 Real-Time Collaboration Demo
+##  Real-Time Collaboration Demo
 
 ![Real-time Drawing Sync](./screenshots/whiteboard-collaboration-demo.gif)
 
@@ -23,9 +23,9 @@ A real-time collaborative drawing application where multiple users can draw toge
 ---
 
 
-## ✨ Features
+##  Features
 
-### 🖌️ Drawing Tools
+###  Drawing Tools
 - **Pen Tool** - Freehand drawing with adjustable brush size
 - **Eraser** - Remove unwanted strokes
 - **Line Tool** - Draw straight lines
@@ -34,14 +34,14 @@ A real-time collaborative drawing application where multiple users can draw toge
 - **Color Palette** - 15 vibrant colors to choose from
 - **Brush Size Control** - Adjustable from 1-50px
 
-### 👥 Real-Time Collaboration
+### Real-Time Collaboration
 - **Multi-User Support** - Unlimited concurrent users per room
 - **Room Codes** - Create or join private drawing sessions
 - **User Presence** - See who's online in your room with color-coded avatars
 - **Live Synchronization** - Changes appear instantly across all clients
 - **Live Cursors** - Track other users' movements in real-time with colored cursors
 
-### 💾 Canvas Management
+### Canvas Management
 - **Save Drawings** - Store your artwork to MongoDB with thumbnails
 - **Load Drawings** - Browse and load previously saved drawings
 - **Gallery View** - Visual preview of all saved drawings
@@ -50,14 +50,14 @@ A real-time collaborative drawing application where multiple users can draw toge
 - **Download** - Export your artwork as PNG
 - **Persistent Rooms** - Drawings saved until all users leave
 
-### 🎨 User Experience
+### User Experience
 - **Modern Dark UI** - Sleek interface with gradient backgrounds
 - **Responsive Design** - Works on desktop, tablet, and mobile
 - **Smooth Animations** - Fluid drawing experience
 - **Color-Coded Tools** - Visual feedback for selected tools
 - **Real-time User Avatars** - See who's drawing with you
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 **Frontend:**
 - React 19
@@ -78,7 +78,7 @@ A real-time collaborative drawing application where multiple users can draw toge
 - Backend: Render
 - Database: MongoDB Atlas
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 collaborative-whiteboard/
@@ -94,7 +94,7 @@ collaborative-whiteboard/
 └── README.md
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Node.js 16+ installed
@@ -158,7 +158,7 @@ Client runs on `http://localhost:3000`
 3. Draw in one window → See it appear in real-time in all other windows! ✨
 4. Watch the live cursors move as others draw!
 
-## 📖 How to Use
+## How to Use
 
 ### Creating/Joining a Room
 
@@ -196,7 +196,7 @@ Client runs on `http://localhost:3000`
 - **Save Drawing** - Stores to MongoDB with thumbnail
 - **Download** - Saves the canvas as a PNG image to your device
 
-## 🎯 Technical Highlights
+## Technical Highlights
 
 ### Real-Time Communication
 - **WebSocket Protocol** - Bi-directional, low-latency communication
@@ -227,7 +227,7 @@ GET    /api/room/:roomId/data    # Get current room data
 GET    /health                   # Health check
 ```
 
-## 🌐 Deployment
+## Deployment
 
 ### Current Deployment
 
@@ -254,7 +254,7 @@ GET    /health                   # Health check
 5. Update `SOCKET_URL` in `Whiteboard.jsx` to your backend URL
 6. Deploy!
 
-## 🔧 Configuration
+## Configuration
 
 ### Update Backend URL
 
@@ -281,7 +281,7 @@ const io = socketIo(server, {
 });
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 **Canvas not appearing?**
 - Ensure server is running and accessible
@@ -303,7 +303,7 @@ const io = socketIo(server, {
 - Check that MONGODB_URI environment variable is set
 - Ensure payload size isn't exceeding limits
 
-## 🎓 Learning Outcomes
+## Learning Outcomes
 
 This project demonstrates:
 - **WebSocket implementation** with Socket.io
@@ -315,7 +315,7 @@ This project demonstrates:
 - **Event-driven architecture** patterns
 - **Room-based session management**
 
-## 💡 Potential Extensions
+## Potential Extensions
 
 *This project is feature-complete and fully functional. Below are additional features that could expand its capabilities:*
 
@@ -337,7 +337,7 @@ This project demonstrates:
 - Drawing templates library
 
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please follow these steps:
 
@@ -347,17 +347,17 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License - feel free to use it for your portfolio!
 
-## 👨‍💻 Author
+## Author
 
 **Tuan Nguyen**
 - GitHub: [@tuanwinnn](https://github.com/tuanwinnn)
 - LinkedIn: [Tuan Nguyen](https://www.linkedin.com/in/tuan-nguyen-win/)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Socket.io team for the excellent WebSocket library
 - React team for the amazing framework
@@ -367,5 +367,3 @@ This project is licensed under the MIT License - feel free to use it for your po
 - Tailwind CSS for rapid UI development
 
 ---
-
-**Built with ❤️ and 🎨 for collaborative creativity**
