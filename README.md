@@ -368,7 +368,7 @@ This project is licensed under the MIT License - feel free to use it for your po
 
 **Tuan Nguyen**
 - GitHub: [@tuanwinnn](https://github.com/tuanwinnn)
-- LinkedIn: [Tuan Nguyen](https://www.linkedin.com/in/tuan-nguyen-237656326/)
+- LinkedIn: [Tuan Nguyen](https://www.linkedin.com/in/tuan-nguyen-win/)
 
 ## Acknowledgments
 
@@ -380,5 +380,3 @@ This project is licensed under the MIT License - feel free to use it for your po
 - Tailwind CSS for rapid UI development
 
 ---
-
-**Built for collaborative creativity**
