@@ -12,8 +12,9 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Pencil, Eraser, Circle, Square, Minus, Download, Trash2, Undo, Users } from 'lucide-react';
+import { Pencil, Eraser, Circle, Square, Minus, Download, Trash2, Undo, Users, LogOut } from 'lucide-react';
 import io from 'socket.io-client';
+import AuthScreen from './AuthScreen';
 
 // WebSocket server URL - change this when deploying to production
 const SOCKET_URL = 'https://collaborative-whiteboard-qg0f.onrender.com';
@@ -31,9 +32,17 @@ const CollaborativeWhiteboard = () => {
   const [brushSize, setBrushSize] = useState(3);
   const [tool, setTool] = useState('pen'); // Current selected tool
   
+  // Auth state
+  const [token, setToken] = useState(null);
+  const [authUsername, setAuthUsername] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false); // avoids a login-screen flash while localStorage is checked
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState({ username: '', password: '' });
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
   // Room and user state
   const [roomId, setRoomId] = useState('');
-  const [username, setUsername] = useState('');
   const [joined, setJoined] = useState(false);
   const [users, setUsers] = useState([]); // List of users in current room
   
@@ -54,6 +63,33 @@ const CollaborativeWhiteboard = () => {
     '#84cc16', '#22c55e', '#10b981', '#14b8a6', '#06b6d4',
     '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7'
   ];
+
+  /**
+   * Restore session from localStorage on load
+   * Decodes the JWT payload locally to check expiry, avoiding an extra network round trip
+   */
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    const storedUsername = localStorage.getItem('username');
+
+    if (storedToken && storedUsername) {
+      try {
+        const payload = JSON.parse(atob(storedToken.split('.')[1]));
+        if (payload.exp && payload.exp * 1000 > Date.now()) {
+          setToken(storedToken);
+          setAuthUsername(storedUsername);
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('username');
+        }
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('username');
+      }
+    }
+
+    setAuthChecked(true);
+  }, []);
 
   /**
    * Initialize canvas and handle window resize
@@ -103,11 +139,21 @@ const CollaborativeWhiteboard = () => {
   useEffect(() => {
     if (!joined) return;
 
-    // Establish WebSocket connection
-    socketRef.current = io(SOCKET_URL);
+    // Establish WebSocket connection, authenticated via JWT
+    socketRef.current = io(SOCKET_URL, { auth: { token } });
 
-    // Join the specified room with username
-    socketRef.current.emit('join-room', { roomId, username });
+    // Join the specified room; server derives the username from the token
+    socketRef.current.emit('join-room', { roomId });
+
+    /**
+     * Connection rejected (missing/invalid/expired token)
+     * Bounce back to the login screen
+     */
+    socketRef.current.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      alert('Your session is invalid or expired. Please log in again.');
+      handleLogout();
+    });
 
     /**
      * Load existing drawing data when joining room
@@ -196,7 +242,7 @@ const CollaborativeWhiteboard = () => {
         socketRef.current.disconnect();
       }
     };
-  }, [joined, roomId, username]);
+  }, [joined, roomId, token]);
 
   /**
    * Render drawing data on canvas
@@ -386,13 +432,59 @@ const CollaborativeWhiteboard = () => {
   };
 
   /**
-   * Join a room with username
-   * Validates inputs before connecting
+   * Join a room
+   * Identity comes from the authenticated account; only the room code needs validating
    */
   const joinRoom = () => {
-    if (roomId.trim() && username.trim()) {
+    if (roomId.trim()) {
       setJoined(true);
     }
+  };
+
+  /**
+   * Handle login/register form submission
+   */
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthLoading(true);
+
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+
+    try {
+      const response = await fetch(`${SOCKET_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(authForm)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setAuthError(data.error || 'Authentication failed');
+        return;
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('username', data.username);
+      setToken(data.token);
+      setAuthUsername(data.username);
+    } catch (error) {
+      setAuthError('Network error, please try again');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  /**
+   * Clear session and return to the login screen
+   */
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    setToken(null);
+    setAuthUsername(null);
+    setJoined(false);
   };
 
   /**
@@ -404,45 +496,47 @@ const saveDrawing = async () => {
     return;
   }
 
-  console.log('Starting save process...'); // DEBUG
-
   try {
     const canvas = canvasRef.current;
     const thumbnail = canvas.toDataURL('image/png');
 
-    console.log('Getting room data for room:', roomId); // DEBUG
-    
     // Get current room's drawing data from server
-    const roomDataResponse = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/room/${roomId}/data`);
-    
+    const roomDataResponse = await fetch(`${SOCKET_URL}/api/room/${roomId}/data`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    if (roomDataResponse.status === 401 || roomDataResponse.status === 403) {
+      alert('Session expired, please log in again.');
+      handleLogout();
+      return;
+    }
     if (!roomDataResponse.ok) {
       throw new Error('Failed to get room data');
     }
-    
+
     const roomData = await roomDataResponse.json();
-    
-    console.log('Room data received, length:', roomData.drawingData?.length); // DEBUG
 
     const savePayload = {
       roomId: `saved-${Date.now()}`,
       title: saveTitle,
       drawingData: roomData.drawingData,
-      createdBy: username,
       thumbnail
     };
-    
-    console.log('Sending save request...'); // DEBUG
 
-    const response = await fetch('https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/save', {
+    const response = await fetch(`${SOCKET_URL}/api/drawings/save`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(savePayload)
     });
 
+    if (response.status === 401 || response.status === 403) {
+      alert('Session expired, please log in again.');
+      handleLogout();
+      return;
+    }
+
     const data = await response.json();
-    
-    console.log('Save response:', data); // DEBUG
-    
+
     if (data.success) {
       alert('Drawing saved successfully!');
       setSaveTitle('');
@@ -461,7 +555,9 @@ const saveDrawing = async () => {
  */
 const loadDrawings = async () => {
   try {
-    const response = await fetch('https://collaborative-whiteboard-qg0f.onrender.com/api/drawings');
+    const response = await fetch(`${SOCKET_URL}/api/drawings`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
     const drawings = await response.json();
     setSavedDrawings(drawings);
     setShowGallery(true);
@@ -476,14 +572,10 @@ const loadDrawings = async () => {
  */
 const loadDrawing = async (drawingId) => {
   try {
-
-    console.log('Loading drawing ID:', drawingId); // DEBUG
-
-    const response = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/${drawingId}`);
+    const response = await fetch(`${SOCKET_URL}/api/drawings/${drawingId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
     const drawing = await response.json();
-
-    console.log('Loaded drawing:', drawing); // DEBUG
-    console.log('Drawing data length:', drawing.drawingData?.length); // DEBUG
 
     // Clear current canvas
     const canvas = canvasRef.current;
@@ -508,19 +600,21 @@ const loadDrawing = async (drawingId) => {
  */
 const deleteDrawing = async (drawingId, e) => {
   e.stopPropagation(); // Prevent loading the drawing when clicking delete
-  
-  console.log('Deleting drawing:', drawingId); // DEBUG
-  
+
   if (!window.confirm('Are you sure you want to delete this drawing?')) {
     return;
   }
 
   try {
-    const response = await fetch(`https://collaborative-whiteboard-qg0f.onrender.com/api/drawings/${drawingId}`, {
-      method: 'DELETE'
+    const response = await fetch(`${SOCKET_URL}/api/drawings/${drawingId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
     });
 
-    console.log('Delete response:', response); // DEBUG
+    if (response.status === 403) {
+      alert('You can only delete your own drawings');
+      return;
+    }
 
     if (response.ok) {
       // Refresh the gallery
@@ -534,6 +628,29 @@ const deleteDrawing = async (drawingId, e) => {
   }
 };
 
+  // Avoid a login-screen flash while localStorage session restore is in progress
+  if (!authChecked) {
+    return null;
+  }
+
+  // Require login before anything else
+  if (!token) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        form={authForm}
+        onChange={setAuthForm}
+        onSubmit={handleAuthSubmit}
+        onToggleMode={() => {
+          setAuthMode((m) => (m === 'login' ? 'register' : 'login'));
+          setAuthError('');
+        }}
+        error={authError}
+        loading={authLoading}
+      />
+    );
+  }
+
   // Render join screen if not yet joined
   if (!joined) {
     return (
@@ -543,21 +660,17 @@ const deleteDrawing = async (drawingId, e) => {
             Collaborative Whiteboard
           </h1>
           <p className="text-gray-600 text-center mb-8">Draw together in real-time</p>
-          
+
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-600">
+              Logged in as <span className="font-semibold text-gray-800">{authUsername}</span>
+            </p>
+            <button onClick={handleLogout} className="text-sm text-red-600 hover:underline">
+              Log out
+            </button>
+          </div>
+
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Your Name
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
-              />
-            </div>
-            
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Room Code
@@ -573,10 +686,10 @@ const deleteDrawing = async (drawingId, e) => {
                 Use the same code to join the same room
               </p>
             </div>
-            
+
             <button
               onClick={joinRoom}
-              disabled={!roomId.trim() || !username.trim()}
+              disabled={!roomId.trim()}
               className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
             >
               Join Room
@@ -691,6 +804,13 @@ const deleteDrawing = async (drawingId, e) => {
             <Download className="w-4 h-4" />
             Download
           </button>
+          <button
+            onClick={handleLogout}
+            className="w-full bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Log Out
+          </button>
         </div>
 
         {/* Users */}
@@ -733,9 +853,7 @@ const deleteDrawing = async (drawingId, e) => {
           const user = users.find(u => u.id === userId);
           const userColor = user?.color || '#ef4444';
           const userName = user?.username || 'User';
-          
-          console.log('Rendering cursor for:', userName, 'at', pos); // DEBUG
-          
+
           return (
             <div
               key={userId}
