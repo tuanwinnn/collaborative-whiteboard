@@ -120,6 +120,14 @@ function authenticateToken(req, res, next) {
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
+  // Per-connection state for decoding this socket's delta-encoded stroke points back to
+  // absolute coordinates before they're persisted to room.drawingData. Fresh joiners
+  // (load-drawing), undo (redraw), and Mongo save all replay that array independently
+  // of any live stroke, so it must stay absolute regardless of the wire encoding.
+  let lastAbsolutePoint = null; // { x, y }
+  let activeStrokeId = null;
+  let activeStrokeMeta = null; // { type, color, brushSize } carried forward from the stroke's keyframe
+
   // Join a room
   socket.on('join-room', ({ roomId }) => {
     socket.join(roomId);
@@ -154,17 +162,52 @@ io.on('connection', (socket) => {
     console.log(`${user.username} joined room: ${roomId}`);
   });
 
-  // Handle drawing events
+  // Handle drawing events. Points arrive absolute (shapes, and a stroke's keyframes —
+  // has x0/y0/x1/y1) or delta-encoded (s + dx/dy, relative to that stroke's last point).
   socket.on('draw', (data) => {
-    const { roomId, ...drawData } = data;
-    
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      room.drawingData.push(drawData);
-      
-      // Broadcast to all other users in the room
-      socket.to(roomId).emit('draw', drawData);
+    const { roomId, s: strokeId, dx, dy, type, x0, y0, x1, y1, color, brushSize } = data;
+
+    if (!rooms.has(roomId)) return;
+    const room = rooms.get(roomId);
+
+    let storedSegment;
+
+    if (!strokeId) {
+      // Shape tool: single-shot, always absolute
+      storedSegment = { type, x0, y0, x1, y1, color, brushSize };
+    } else if (dx !== undefined) {
+      // Delta point within an ongoing stroke on this connection
+      if (!lastAbsolutePoint || activeStrokeId !== strokeId) {
+        // No known reference for this stroke - drop rather than store/broadcast a
+        // point reconstructed from the wrong origin. Storage and broadcast must agree.
+        return;
+      }
+      const nx1 = lastAbsolutePoint.x + dx;
+      const ny1 = lastAbsolutePoint.y + dy;
+      storedSegment = {
+        type: activeStrokeMeta.type,
+        x0: lastAbsolutePoint.x,
+        y0: lastAbsolutePoint.y,
+        x1: nx1,
+        y1: ny1,
+        color: activeStrokeMeta.color,
+        brushSize: activeStrokeMeta.brushSize
+      };
+      lastAbsolutePoint = { x: nx1, y: ny1 };
+    } else {
+      // Keyframe: stroke start, periodic resync, or post-reconnect resume
+      storedSegment = { type, x0, y0, x1, y1, color, brushSize };
+      lastAbsolutePoint = { x: x1, y: y1 };
+      activeStrokeId = strokeId;
+      activeStrokeMeta = { type, color, brushSize };
     }
+
+    room.drawingData.push(storedSegment);
+
+    // Relay the original payload (still delta-encoded where applicable) to other clients.
+    // userId lets receivers keep the sender's remote-cursor dot moving while they draw,
+    // instead of only updating it from the separate (drawing-paused-only) cursor-move event.
+    socket.to(roomId).emit('draw', { ...data, userId: socket.id });
   });
 
   // Handle cursor movement
@@ -200,7 +243,13 @@ io.on('connection', (socket) => {
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
-    
+
+    // Invalidate delta-decode state - a reconnect gets a fresh connection/closure anyway,
+    // but clearing explicitly keeps the intent obvious rather than relying on that
+    lastAbsolutePoint = null;
+    activeStrokeId = null;
+    activeStrokeMeta = null;
+
     // Remove user from all rooms
     rooms.forEach((room, roomId) => {
       const userIndex = room.users.findIndex(u => u.id === socket.id);

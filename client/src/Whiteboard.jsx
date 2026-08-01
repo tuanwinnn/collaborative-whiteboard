@@ -19,13 +19,34 @@ import AuthScreen from './AuthScreen';
 // WebSocket server URL - change this when deploying to production
 const SOCKET_URL = 'https://collaborative-whiteboard-qg0f.onrender.com';
 
+// Send a full absolute point instead of a delta every N points within a stroke,
+// bounding how far a dropped/out-of-order delta can desync a receiver before it self-corrects
+const KEYFRAME_INTERVAL = 20;
+
 const CollaborativeWhiteboard = () => {
   // Canvas reference for direct DOM manipulation
   const canvasRef = useRef(null);
   
   // Socket.io reference for WebSocket connection
   const socketRef = useRef(null);
-  
+
+  // Delta-encoding: tracks the in-progress pen/eraser stroke this client is sending.
+  // null when no stroke is active. Read/written synchronously (unlike React state)
+  // so rapid mousemoves can never see a stale reference point.
+  const activeStrokeRef = useRef(null); // { id, lastX, lastY, pointsSinceKeyframe }
+  const connectionShortIdRef = useRef(null); // short id scoped to this socket connection
+  const strokeCounterRef = useRef(0); // increments per stroke started on this connection
+
+  // Per-remote-stroke reconstruction state for decoding other users' delta points.
+  // Keyed by strokeId; cleared on any full-canvas resync (join/undo/clear).
+  const remoteStrokePointsRef = useRef(new Map());
+
+  // Delta-encoding metric instrumentation: baselineBytes is what today's all-absolute
+  // encoding would have sent for the same points; deltaBytes is what's actually sent.
+  // Read via window.__deltaStats() / reset via window.__resetDeltaStats() in devtools.
+  const baselineBytesRef = useRef(0);
+  const deltaBytesRef = useRef(0);
+
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState('#000000');
@@ -92,6 +113,20 @@ const CollaborativeWhiteboard = () => {
   }, []);
 
   /**
+   * Expose delta-encoding byte-count instrumentation to devtools for before/after measurements
+   */
+  useEffect(() => {
+    window.__deltaStats = () => ({
+      baselineBytes: baselineBytesRef.current,
+      deltaBytes: deltaBytesRef.current
+    });
+    window.__resetDeltaStats = () => {
+      baselineBytesRef.current = 0;
+      deltaBytesRef.current = 0;
+    };
+  }, []);
+
+  /**
    * Initialize canvas and handle window resize
    * Sets up canvas dimensions and context settings
    */
@@ -139,8 +174,17 @@ const CollaborativeWhiteboard = () => {
   useEffect(() => {
     if (!joined) return;
 
+    // Aliased once so the cleanup function below doesn't read ref.current directly
+    const remoteStrokePoints = remoteStrokePointsRef.current;
+
     // Establish WebSocket connection, authenticated via JWT
     socketRef.current = io(SOCKET_URL, { auth: { token } });
+
+    // Fresh delta-encoding identity for this connection
+    connectionShortIdRef.current = Math.random().toString(36).slice(2, 6);
+    strokeCounterRef.current = 0;
+    activeStrokeRef.current = null;
+    remoteStrokePoints.clear();
 
     // Join the specified room; server derives the username from the token
     socketRef.current.emit('join-room', { roomId });
@@ -156,6 +200,17 @@ const CollaborativeWhiteboard = () => {
     });
 
     /**
+     * Connection dropped mid-stroke (network blip, etc). Force the next point sent
+     * to be a fresh keyframe rather than a delta continuing across the gap — the
+     * server's and other clients' reconstruction state for this stroke may be gone.
+     */
+    socketRef.current.on('disconnect', () => {
+      if (activeStrokeRef.current) {
+        activeStrokeRef.current = { ...activeStrokeRef.current, pointsSinceKeyframe: KEYFRAME_INTERVAL };
+      }
+    });
+
+    /**
      * Load existing drawing data when joining room
      * Server sends all previous drawing actions to sync new user
      */
@@ -163,6 +218,7 @@ const CollaborativeWhiteboard = () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
+      remoteStrokePoints.clear();
 
       // Replay all drawing actions
       drawingData.forEach(data => {
@@ -173,11 +229,40 @@ const CollaborativeWhiteboard = () => {
     /**
      * Receive drawing data from other users
      * Renders their strokes on local canvas
+     *
+     * Points arrive either absolute (shapes, and a stroke's keyframes — has x0/y0/x1/y1)
+     * or delta-encoded (dx/dy relative to that stroke's last known point). Delta points
+     * are reconstructed using per-strokeId state; a delta with no known reference is
+     * dropped rather than plotted at a garbage location.
+     *
+     * Also drives the sender's remote-cursor dot while they draw — cursor-move only
+     * fires when that user isn't drawing, so without this the dot would freeze mid-stroke.
      */
     socketRef.current.on('draw', (data) => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
-      drawOnCanvas(context, data);
+      let endX, endY;
+
+      if (data.dx !== undefined) {
+        const last = remoteStrokePoints.get(data.s);
+        if (!last) return;
+
+        endX = last.x + data.dx;
+        endY = last.y + data.dy;
+        drawOnCanvas(context, { type: last.type, x0: last.x, y0: last.y, x1: endX, y1: endY, color: last.color, brushSize: last.brushSize });
+        remoteStrokePoints.set(data.s, { ...last, x: endX, y: endY });
+      } else {
+        drawOnCanvas(context, data);
+        endX = data.x1;
+        endY = data.y1;
+        if (data.s) {
+          remoteStrokePoints.set(data.s, { x: endX, y: endY, type: data.type, color: data.color, brushSize: data.brushSize });
+        }
+      }
+
+      if (data.userId !== undefined) {
+        setRemoteCursors(prev => ({ ...prev, [data.userId]: { x: endX, y: endY } }));
+      }
     });
 
     /**
@@ -220,6 +305,7 @@ const CollaborativeWhiteboard = () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
+      remoteStrokePoints.clear();
     });
 
     /**
@@ -230,6 +316,7 @@ const CollaborativeWhiteboard = () => {
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       context.clearRect(0, 0, canvas.width, canvas.height);
+      remoteStrokePoints.clear();
 
       drawingData.forEach(data => {
         drawOnCanvas(context, data);
@@ -238,6 +325,7 @@ const CollaborativeWhiteboard = () => {
 
     // Cleanup: disconnect socket when component unmounts or user leaves
     return () => {
+      remoteStrokePoints.clear();
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
@@ -310,6 +398,16 @@ const CollaborativeWhiteboard = () => {
 
     setIsDrawing(true);
     setStartPos({ x, y });
+
+    if (tool === 'pen' || tool === 'eraser') {
+      strokeCounterRef.current += 1;
+      activeStrokeRef.current = {
+        id: `${connectionShortIdRef.current}-${strokeCounterRef.current}`,
+        lastX: x,
+        lastY: y,
+        pointsSinceKeyframe: 0
+      };
+    }
   };
 
   /**
@@ -334,26 +432,38 @@ const CollaborativeWhiteboard = () => {
 
     // Pen and eraser draw continuously (every mouse move)
     if (tool === 'pen' || tool === 'eraser') {
-      const drawData = {
-        roomId,
-        type: tool,
-        x0: startPos.x,
-        y0: startPos.y,
-        x1: x,
-        y1: y,
-        color,
-        brushSize
-      };
+      const stroke = activeStrokeRef.current;
+      // Source of truth for the segment's start point: the ref, not startPos state —
+      // startPos updates are async, so two mousemoves can fire before a re-render commits,
+      // which would make local rendering and wire encoding disagree on where the stroke is.
+      const x0 = stroke ? stroke.lastX : startPos.x;
+      const y0 = stroke ? stroke.lastY : startPos.y;
 
-      // Draw locally for immediate feedback
-      drawOnCanvas(context, drawData);
+      // Draw locally for immediate feedback — always full-fidelity, never delta-encoded
+      drawOnCanvas(context, { type: tool, x0, y0, x1: x, y1: y, color, brushSize });
 
-      // Send to server to broadcast to other users
-      if (socketRef.current) {
-        socketRef.current.emit('draw', drawData);
+      if (socketRef.current && stroke) {
+        // Instrumentation: what the old all-absolute encoding would have sent for this point
+        baselineBytesRef.current += JSON.stringify({ roomId, type: tool, x0, y0, x1: x, y1: y, color, brushSize }).length;
+
+        const needsKeyframe = stroke.pointsSinceKeyframe === 0 || stroke.pointsSinceKeyframe >= KEYFRAME_INTERVAL;
+        let payload;
+        if (needsKeyframe) {
+          // Stroke start, periodic resync, or forced after a reconnect - self-contained absolute point
+          payload = { roomId, s: stroke.id, type: tool, x0, y0, x1: x, y1: y, color, brushSize };
+          activeStrokeRef.current = { ...stroke, lastX: x, lastY: y, pointsSinceKeyframe: 1 };
+        } else {
+          // Continuation - just the movement since the last point; type/color/brushSize
+          // are carried forward from this stroke's keyframe on the receiving end
+          payload = { roomId, s: stroke.id, dx: x - stroke.lastX, dy: y - stroke.lastY };
+          activeStrokeRef.current = { ...stroke, lastX: x, lastY: y, pointsSinceKeyframe: stroke.pointsSinceKeyframe + 1 };
+        }
+
+        socketRef.current.emit('draw', payload);
+        deltaBytesRef.current += JSON.stringify(payload).length;
       }
 
-      // Update start position for next segment
+      // Update start position for next segment (used by shape tools; kept in sync for pen/eraser too)
       setStartPos({ x, y });
     }
   };
@@ -391,6 +501,7 @@ const CollaborativeWhiteboard = () => {
       }
     }
 
+    activeStrokeRef.current = null;
     setIsDrawing(false);
     setStartPos(null);
   };
