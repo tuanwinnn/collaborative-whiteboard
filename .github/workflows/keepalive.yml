@@ -1,0 +1,56 @@
+name: MongoDB Atlas Keepalive
+
+# Fires twice a month so the cluster never sees 30 (or 60) consecutive
+# days without a read/write. workflow_dispatch lets it be run manually
+# from the Actions tab. Deliberately no pull_request trigger -- this repo
+# is public, and a fork PR must never be able to reach the Mongo secret.
+on:
+  schedule:
+    - cron: '0 3 1,15 * *' # 03:00 UTC on the 1st and 15th of each month
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci --omit=dev
+
+      - name: Ping MongoDB Atlas
+        working-directory: server
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: node scripts/keepalive.js
+
+      # GitHub auto-disables scheduled workflows after 60 days with no
+      # repo activity (workflow runs alone don't count). An empty commit
+      # counts as activity and resets that clock. Pushed to a dedicated
+      # "keepalive" branch, never to master, so this doesn't clutter real
+      # project history. This step doesn't need to touch the working
+      # directory the earlier steps used, since --allow-empty commits
+      # carry no file changes.
+      - name: Push keepalive marker to dedicated branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin keepalive > /dev/null 2>&1; then
+            git fetch origin keepalive
+            git checkout -B keepalive origin/keepalive
+          else
+            git checkout --orphan keepalive
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+          git commit --allow-empty -m "chore: keepalive ping $(date -u +'%Y-%m-%d')"
+          git push origin keepalive
